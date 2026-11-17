@@ -74,10 +74,15 @@ function buildPrompt(input: ExplainInput): string | null {
     typeof endLabel !== 'string' ||
     roomName.trim().length === 0 ||
     roomName.length > 40 ||
+    // C2: newlines would corrupt the line-based prompt structure.
+    /[\r\n]/.test(roomName) ||
     !/^\d{1,2}:\d{2}$/.test(startLabel.trim()) ||
     !/^\d{1,2}:\d{2}$/.test(endLabel.trim()) ||
     !result ||
     typeof result.available !== 'boolean' ||
+    // C1: the checker guarantees available === (reasons.length === 0);
+    // rejecting violations here prevents self-contradictory explanations.
+    result.available !== (result.reasons.length === 0) ||
     !Array.isArray(result.reasons) ||
     result.reasons.length > 10 ||
     result.reasons.some((r) => typeof r !== 'string' || r.length > 200)
