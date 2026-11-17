@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Building2,
   Clock,
@@ -9,6 +9,8 @@ import {
   Users,
   Filter,
   SearchX,
+  Sparkles,
+  AlertTriangle,
 } from 'lucide-react';
 import { rooms, initialBookings, allEquipment } from './data';
 import {
@@ -19,6 +21,8 @@ import {
   MAX_BOOKING_MINUTES,
 } from './utils';
 import type { Booking } from './types';
+import { generateExplanation } from './explain';
+import type { ExplainOutcome } from './explain';
 
 function App() {
   const [bookings] = useState<Booking[]>(initialBookings);
@@ -86,6 +90,34 @@ function App() {
   }, [selectedRoom, startMin, endMin, roomBookings, currentTime]);
 
   const invalidInput = startMin === null || endMin === null;
+
+  // Explanation is cosmetic only; the deterministic result above stays authoritative.
+  const [explanation, setExplanation] = useState<ExplainOutcome | null>(null);
+  const [explaining, setExplaining] = useState(false);
+  const requestSeq = useRef(0);
+
+  const requestExplanation = async () => {
+    if (!selectedRoom || invalidInput) return;
+    const seq = ++requestSeq.current;
+    setExplaining(true);
+    setExplanation(null);
+    const outcome = await generateExplanation({
+      roomName: selectedRoom.name,
+      startLabel,
+      endLabel,
+      result,
+    });
+    if (seq === requestSeq.current) {
+      setExplanation(outcome);
+      setExplaining(false);
+    }
+  };
+
+  useEffect(() => {
+    requestSeq.current += 1;
+    setExplanation(null);
+    setExplaining(false);
+  }, [roomName, startLabel, endLabel, currentTime]);
 
   const toggleEquipment = (eq: string) => {
     setRequiredEquipment((prev) =>
@@ -324,6 +356,42 @@ function App() {
               <p className="text-xs text-slate-400">
                 No conflicts found. This is a check only — no booking is created.
               </p>
+            )}
+
+            {/* Optional AI explanation — always visually separate from the verdict */}
+            {selectedRoom && !invalidInput && (
+              <div className="mt-4 border-t border-slate-100 pt-4">
+                {!explanation && (
+                  <button
+                    onClick={requestExplanation}
+                    disabled={explaining}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-600 transition-all hover:border-blue-300 hover:bg-blue-50 disabled:cursor-wait disabled:opacity-60"
+                  >
+                    <Sparkles size={13} className="text-blue-500" />
+                    {explaining ? 'Generating…' : 'Explain this result'}
+                  </button>
+                )}
+                {explanation?.kind === 'ok' && (
+                  <div className="rounded-lg border border-blue-100 bg-blue-50/60 p-3">
+                    <p className="mb-1 flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-blue-500">
+                      <Sparkles size={11} />
+                      AI-generated explanation — not the booking status
+                    </p>
+                    <p className="text-xs leading-relaxed text-slate-600">{explanation.text}</p>
+                  </div>
+                )}
+                {explanation?.kind === 'fallback' && (
+                  <div className="rounded-lg border border-amber-100 bg-amber-50 p-3">
+                    <p className="flex items-start gap-1.5 text-xs text-amber-700">
+                      <AlertTriangle size={13} className="mt-0.5 shrink-0" />
+                      {explanation.reason} The confirmed status above remains authoritative.
+                    </p>
+                  </div>
+                )}
+                {explanation?.kind === 'rejected' && (
+                  <p className="text-xs text-slate-400">{explanation.reason}</p>
+                )}
+              </div>
             )}
           </section>
         </div>
