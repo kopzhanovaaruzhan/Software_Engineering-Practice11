@@ -24,24 +24,20 @@ export async function generateExplanation(
   input: ExplainInput,
   adapter: (prompt: string) => Promise<string> = mockAdapter,
 ): Promise<ExplainOutcome> {
-  const payload = buildPayload(input);
-  if (payload === null) {
+  const prompt = buildPrompt(input);
+  if (prompt === null) {
     return { kind: 'rejected', reason: 'Request is empty or malformed.' };
   }
 
   try {
-    const text = await withTimeout(adapter(payload), EXPLAIN_TIMEOUT_MS);
+    const text = await withTimeout(adapter(prompt), EXPLAIN_TIMEOUT_MS);
     if (typeof text !== 'string' || text.trim().length === 0) {
       return { kind: 'fallback', reason: 'The explanation service returned an empty response.' };
     }
     if (text.length > MAX_EXPLANATION_LENGTH) {
       return { kind: 'fallback', reason: 'The explanation service returned an overly long response.' };
     }
-    const explanation = parseExplanation(text);
-    if (explanation === null) {
-      return { kind: 'fallback', reason: 'The explanation service returned an unparseable response.' };
-    }
-    return { kind: 'ok', text: explanation };
+    return { kind: 'ok', text: text.trim() };
   } catch (err) {
     const reason =
       err instanceof ExplainTimeoutError
@@ -69,11 +65,9 @@ function withTimeout(promise: Promise<string>, ms: number): Promise<string> {
   });
 }
 
-/** Serializes the validated input to the wire JSON payload. Returns null when malformed (AC3). */
-function buildPayload(input: ExplainInput): string | null {
+/** Returns null when the input is empty, malformed, or oversized (AC3). */
+function buildPrompt(input: ExplainInput): string | null {
   const { roomName, startLabel, endLabel, result } = input;
-  const start = startLabel.trim();
-  const end = endLabel.trim();
   if (
     typeof roomName !== 'string' ||
     typeof startLabel !== 'string' ||
@@ -82,8 +76,8 @@ function buildPayload(input: ExplainInput): string | null {
     roomName.length > 40 ||
     // C2: newlines would corrupt the line-based prompt structure.
     /[\r\n]/.test(roomName) ||
-    !/^\d{1,2}:\d{2}$/.test(start) ||
-    !/^\d{1,2}:\d{2}$/.test(end) ||
+    !/^\d{1,2}:\d{2}$/.test(startLabel.trim()) ||
+    !/^\d{1,2}:\d{2}$/.test(endLabel.trim()) ||
     !result ||
     typeof result.available !== 'boolean' ||
     // C1: the checker guarantees available === (reasons.length === 0);
@@ -95,41 +89,28 @@ function buildPayload(input: ExplainInput): string | null {
   ) {
     return null;
   }
-  return JSON.stringify({
-    roomName: roomName.trim(),
-    startTime: start,
-    endTime: end,
-    isAvailable: result.available,
-    reasons: result.reasons,
-  });
+  return [
+    `Room: ${roomName.trim()}`,
+    `Slot: ${startLabel.trim()}–${endLabel.trim()}`,
+    `Deterministic verdict: ${result.available ? 'Available' : 'Unavailable'}`,
+    `Reasons: ${result.reasons.join(' | ') || 'none'}`,
+  ].join('\n');
 }
 
-/** Extracts and bounds-checks the explanation from the expected {"explanation": "..."} response. */
-function parseExplanation(text: string): string | null {
-  try {
-    const parsed = JSON.parse(text) as { explanation?: unknown };
-    if (typeof parsed.explanation !== 'string') return null;
-    const trimmed = parsed.explanation.trim();
-    if (trimmed.length === 0 || trimmed.length > MAX_EXPLANATION_LENGTH) return null;
-    return trimmed;
-  } catch {
-    return null;
-  }
-}
+function mockAdapter(prompt: string): Promise<string> {
+  const lines = prompt.split('\n');
+  const room = lines[0].replace(/^Room: /, '');
+  const slot = lines[1].replace(/^Slot: /, '');
+  const verdict = lines[2].replace(/^Deterministic verdict: /, '');
+  const reasons = lines[3].replace(/^Reasons: /, '');
 
-async function mockAdapter(prompt: string): Promise<string> {
-  const payload = JSON.parse(prompt) as {
-    roomName: string;
-    startTime: string;
-    endTime: string;
-    isAvailable: boolean;
-    reasons: string[];
-  };
-  const slot = `${payload.startTime}–${payload.endTime}`;
-  const explanation = payload.isAvailable
-    ? `${payload.roomName} is available from ${slot}. We hope you have a great session.`
-    : `${payload.roomName} is unavailable for ${slot} because ${lowerFirst(payload.reasons.join('; '))}. Please consider another time or room.`;
-  return JSON.stringify({ explanation });
+  const detail =
+    reasons === 'none'
+      ? `Nothing on the calendar conflicts with ${slot}, so the room is free for the full slot.`
+      : `It is unavailable because ${lowerFirst(reasons)}`;
+  return Promise.resolve(
+    `${room} shows ${verdict.toLowerCase()}. ${detail} This explanation is generated automatically; the confirmed status is the verdict shown above.`,
+  );
 }
 
 function lowerFirst(s: string): string {
