@@ -43,10 +43,25 @@ describe('generateExplanation — acceptance agreement (AC2)', () => {
     const outcome = await generateExplanation({ ...baseInput, result: unavailableResult });
     expect(outcome.kind).toBe('ok');
     if (outcome.kind === 'ok') {
-      expect(outcome.text).toContain('unavailable');
+      expect(outcome.text).toMatch(/\bunavailable\b/);
       expect(outcome.text).toContain('09:00');
       expect(outcome.text).toContain('10:00');
     }
+  });
+
+  it('sends the JSON wire payload to the adapter', async () => {
+    let received: string | undefined;
+    await generateExplanation({ ...baseInput, result: unavailableResult }, async (payload) => {
+      received = payload;
+      return JSON.stringify({ explanation: 'B-202 is unavailable.' });
+    });
+    expect(JSON.parse(received!)).toEqual({
+      roomName: 'B-202',
+      startTime: '09:00',
+      endTime: '10:00',
+      isAvailable: false,
+      reasons: ['Overlaps 1 existing booking (09:00–10:00).'],
+    });
   });
 });
 
@@ -126,6 +141,31 @@ describe('generateExplanation — graceful failure (AC4)', () => {
   it('falls back on an empty response', async () => {
     const outcome = await generateExplanation({ ...baseInput, result }, async () => '   ');
     expect(outcome.kind).toBe('fallback');
+  });
+
+  it('falls back on a non-JSON response', async () => {
+    const outcome = await generateExplanation({ ...baseInput, result }, async () => 'plain prose');
+    expect(outcome).toEqual({
+      kind: 'fallback',
+      reason: 'The explanation service returned an unparseable response.',
+    });
+  });
+
+  it('falls back when the explanation field is missing or non-string', async () => {
+    for (const body of ['{}', '{"explanation": 42}']) {
+      const outcome = await generateExplanation({ ...baseInput, result }, async () => body);
+      expect(outcome).toEqual({
+        kind: 'fallback',
+        reason: 'The explanation service returned an unparseable response.',
+      });
+    }
+  });
+
+  it('unwraps and trims the explanation field on success', async () => {
+    const outcome = await generateExplanation({ ...baseInput, result }, async () =>
+      JSON.stringify({ explanation: '  B-202 is available.  ' }),
+    );
+    expect(outcome).toEqual({ kind: 'ok', text: 'B-202 is available.' });
   });
 
   it('falls back on an overly long response', async () => {
