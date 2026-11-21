@@ -34,6 +34,7 @@ function App() {
   // Filter state (F1–F3)
   const [minCapacity, setMinCapacity] = useState(0);
   const [requiredEquipment, setRequiredEquipment] = useState<string[]>([]);
+  const [showBlocked, setShowBlocked] = useState(false);
 
   // F1–F3: filter rooms by capacity, equipment, and blocked status
   const filteredRooms = useMemo(
@@ -41,9 +42,9 @@ function App() {
       filterRooms(rooms, {
         minCapacity,
         requiredEquipment,
-        excludeBlocked: true,
+        excludeBlocked: !showBlocked,
       }),
-    [minCapacity, requiredEquipment],
+    [minCapacity, requiredEquipment, showBlocked],
   );
 
   // F5: if the selected room is no longer in the filtered list, switch to the
@@ -208,9 +209,20 @@ function App() {
               })}
             </div>
           </div>
+          {/* Blocked filter (F3) */}
+          <div className="mt-4 flex items-center gap-2">
+            <input
+              id="show-blocked"
+              type="checkbox"
+              checked={showBlocked}
+              onChange={(e) => setShowBlocked(e.target.checked)}
+              className="h-4 w-4 rounded border-slate-300 accent-red-600"
+            />
+            <label htmlFor="show-blocked" className="text-sm font-medium text-slate-600">
+              Show blocked rooms <span className="text-xs text-slate-400">(they can be inspected but never booked)</span>
+            </label>
+          </div>
         </section>
-
-        <div className="grid gap-6 md:grid-cols-5">
           {/* Form card */}
           <section className="md:col-span-3 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
             <h2 className="mb-4 flex items-center gap-2 text-lg font-semibold text-slate-900">
