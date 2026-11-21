@@ -223,6 +223,8 @@ function App() {
             </label>
           </div>
         </section>
+
+        <div className="grid gap-6 md:grid-cols-5">
           {/* Form card */}
           <section className="md:col-span-3 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
             <h2 className="mb-4 flex items-center gap-2 text-lg font-semibold text-slate-900">
